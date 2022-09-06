@@ -11,6 +11,12 @@
 
 #include "Monospaced_plain_22.h"
 
+#if defined(ARDUINO_M5Stack_CoreInk)
+#define SKIP_MEASUREMENTS 5
+#else
+#define SKIP_MEASUREMENTS 0
+#endif
+
 #if defined(WIFI_SSID) && defined(WIFI_PASS) and \
     defined(MQTT_HOST) && defined(MQTT_TOPIC)
 #define USE_MQTT
@@ -34,7 +40,9 @@ void setup() {
     cfg.clear_display = true;
 
     M5.begin(cfg);
+#if defined(ARDUINO_M5Stick_C)
     M5.Display.setRotation(M5.Display.getRotation() ^ 1);
+#endif
 
     M5.Display.setTextSize(1);
     M5.Display.setFont(&Monospaced_plain_22);
@@ -99,28 +107,36 @@ void loop() {
         Serial.print("\t");
         Serial.print("Humidity:");
         Serial.println(humidity);
-        M5.Display.clear();
-        M5.Display.setCursor(0,0);
-        M5.Display.startWrite();
-		snprintf(buf, sizeof(buf), "%6d ppm", co2);
-        M5.Display.println(buf);
-		snprintf(buf, sizeof(buf), "%6.1f C", temperature);
-        M5.Display.println(buf);
-		snprintf(buf, sizeof(buf), "%6.1f %%", humidity);
-        M5.Display.println(buf);
-        M5.Display.endWrite();
+        static uint8_t numRefresh = SKIP_MEASUREMENTS;
+        if (++numRefresh > SKIP_MEASUREMENTS) {
+            numRefresh = 0;
+            M5.Display.clear();
+            M5.Display.startWrite();
+#if defined (ARDUINO_M5Stack_CoreInk)
+            M5.Display.setCursor(2,2);
+#else
+            M5.Display.setCursor(0,0);
+#endif 
+            snprintf(buf, sizeof(buf), "%6d ppm", co2);
+            M5.Display.println(buf);
+            snprintf(buf, sizeof(buf), "%6.1f C", temperature);
+            M5.Display.println(buf);
+            snprintf(buf, sizeof(buf), "%6.1f %%", humidity);
+            M5.Display.println(buf);
+            M5.Display.endWrite();
 #ifdef USE_MQTT
-        JsonBuffer json;
-        json_init_buffer(&json, json_string, sizeof(json_string));
-        json_start_object(&json);
-        json_named_cstring_append(&json, "id", client_id);
-        json_named_uint32_append(&json, "co2", co2);
-        json_named_fixedpoint_append(&json, "temp", (uint32_t)(temperature*10),  1);
-        json_named_fixedpoint_append(&json, "hum", (uint32_t)(humidity*10), 1);
-        json_end_object(&json);
-        json_terminate(&json);
-        mqtt.publish(MQTT_TOPIC, json_string);
+            JsonBuffer json;
+            json_init_buffer(&json, json_string, sizeof(json_string));
+            json_start_object(&json);
+            json_named_cstring_append(&json, "id", client_id);
+            json_named_uint32_append(&json, "co2", co2);
+            json_named_fixedpoint_append(&json, "temp", (uint32_t)(temperature*10),  1);
+            json_named_fixedpoint_append(&json, "hum", (uint32_t)(humidity*10), 1);
+            json_end_object(&json);
+            json_terminate(&json);
+            mqtt.publish(MQTT_TOPIC, json_string);
 #endif
+        }
     }
     M5.update();
 #ifdef USE_MQTT
