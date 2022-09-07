@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <M5UnitOLED.h>
 #include <M5Unified.h>
 #include <WiFi.h>
 
@@ -12,7 +11,7 @@
 #include "Monospaced_plain_22.h"
 
 #if defined(ARDUINO_M5Stack_CoreInk)
-#define SKIP_MEASUREMENTS 5
+#define SKIP_MEASUREMENTS 0
 #else
 #define SKIP_MEASUREMENTS 0
 #endif
@@ -33,6 +32,9 @@ static PubSubClient mqtt(espClient);
 static char json_string[128];
 #endif
 
+M5Canvas canvas(&M5.Display);
+uint16_t origin_x, origin_y;
+
 void setup() {
     auto cfg = M5.config();
 
@@ -43,12 +45,24 @@ void setup() {
 #if defined(ARDUINO_M5Stick_C)
     M5.Display.setRotation(M5.Display.getRotation() ^ 1);
 #endif
+    if (M5.Display.isEPD()) {
+        M5.Display.setEpdMode(epd_mode_t::epd_fastest);
+    }
+    M5.Display.invertDisplay(true);
+    M5.Display.clear(TFT_BLACK);
 
-    M5.Display.setTextSize(1);
-    M5.Display.setFont(&Monospaced_plain_22);
-    M5.Display.startWrite();
-    M5.Display.println("Measuring");
-    M5.Display.endWrite();
+    canvas.setColorDepth(1);
+    canvas.createSprite(160, 80);
+    canvas.setTextSize(1);
+    canvas.setFont(&Monospaced_plain_22);
+    origin_x = (M5.Display.width() - canvas.width())/2;
+    origin_y = (M5.Display.height() - canvas.height())/2;
+
+    canvas.clear();
+    canvas.setCursor(0,0);
+    canvas.println("Measuring");
+
+    canvas.pushSprite(origin_x, origin_y);
 
     M5.Ex_I2C.release();
 
@@ -71,9 +85,8 @@ void setup() {
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     int count = 0;
     while ((WiFi.status() != WL_CONNECTED) && ++count <= 10) {
-        M5.Display.startWrite();
-        M5.Display.print(".");
-        M5.Display.endWrite();
+        canvas.print(".");
+        canvas.pushSprite(origin_x, origin_y);
         delay(1000);
     }
     // attempt MQTT connection regardless of WiFi state, so params are set
@@ -110,20 +123,15 @@ void loop() {
         static uint8_t numRefresh = SKIP_MEASUREMENTS;
         if (++numRefresh > SKIP_MEASUREMENTS) {
             numRefresh = 0;
-            M5.Display.clear();
-            M5.Display.startWrite();
-#if defined (ARDUINO_M5Stack_CoreInk)
-            M5.Display.setCursor(2,2);
-#else
-            M5.Display.setCursor(0,0);
-#endif 
+            canvas.clear();
+            canvas.setCursor(0,0);
             snprintf(buf, sizeof(buf), "%6d ppm", co2);
-            M5.Display.println(buf);
+            canvas.println(buf);
             snprintf(buf, sizeof(buf), "%6.1f C", temperature);
-            M5.Display.println(buf);
+            canvas.println(buf);
             snprintf(buf, sizeof(buf), "%6.1f %%", humidity);
-            M5.Display.println(buf);
-            M5.Display.endWrite();
+            canvas.println(buf);
+            canvas.pushSprite(origin_x, origin_y);
 #ifdef USE_MQTT
             JsonBuffer json;
             json_init_buffer(&json, json_string, sizeof(json_string));
